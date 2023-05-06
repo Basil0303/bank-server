@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 
+const db = require("./db");
+
 accounts = {
   1000: {
     account_no: 1000,
@@ -35,154 +37,195 @@ accounts = {
   },
 };
 
-const register = (acno, username, phone, password) => {
-  if (acno in accounts) {
-    return {
-      status: false,
-      message: "Account already exist!...... please login",
-      statusCode: 404,
-    };
-  } else {
-    accounts[acno] = {
-      account_no: acno,
-      name: username,
-      phone: phone,
-      balance: 0,
-      password: password,
-      transactions: [],
-    };
-    console.log(accounts);
-    return {
-      status: true,
-      message: "Registration completed",
-      statusCode: 201,
-    };
-  }
+const register = (acno, uname, phone, pswd) => {
+  return db.Account.findOne({
+    account_no: acno,
+  }).then((acc) => {
+    console.log(acc);
+    if (acc) {
+      return {
+        status: false,
+        message: "account already exist!...please login!",
+        statusCode: 404,
+      };
+    } else {
+      let accnt = new db.Account({
+        account_no: acno,
+        name: uname,
+        phone: phone,
+        balance: 0,
+        password: pswd,
+        transactions: [],
+      });
+      accnt.save();
+      return {
+        status: true,
+        message: "Registration completed",
+        statusCode: 201,
+      };
+    }
+  });
 };
 
-const login = (acno, psw) => {
-  if (acno in accounts) {
-    console.log(psw)
-    console.log(accounts[acno].password)
-    if (accounts[acno].password == psw) {
-      currentUser = accounts[acno].name;
+const login = (acno, pswd) => {
+  return db.Account.findOne({
+    account_no: acno,
+    password: pswd,
+  }).then((res) => {
+    if (res) {
+      currentUser = res.name;
       currentAcno = acno;
-      token = jwt.sign({ currentAcno: acno }, "secretsuperkey1234");
+      token = jwt.sign(
+        //acno of current user
+        { currentAcno: acno },
+        "secretsuperkey1234"
+      );
       return {
         status: true,
         message: "Login successfull",
         statusCode: 200,
         currentUser,
+        currentAcno,
         token,
-      }
-    } 
-    else {
+      };
+    } else {
       return {
-        status: false,
-        message: "invalid password",
+        status: true,
+        message: "invalid password or account number",
         statusCode: 400,
       };
     }
-  } 
-  else {
-    return {
-      status: false,
-      message: "invalid Account number",
-      statusCode: 400,
-    };
-  }
+  });
 };
 
 //----deposite------------------------------------------
+const deposit = (acc, password, amount, req) => {
+  return db.Account.findOne({
+    account_no: acc,
+    password: password,
+  }).then((res) => {
+    if (res) {
+      if (res.account_no != req.currentAcno) {
+        return {
+          status: false,
+          message: "account number is not authenticated",
+          statusCode: 422,
+        };
+      } else {
+        res.balance += parseInt(amount);
+        let details = { Type: "CREDIT", Amount: parseInt(amount),Balance:res.balance };
+        res.transactions.push(details);
+        res.save();
+        console.log(res);
+        return {
+          status: true,
+          message: `Amount deposited to your account balance: ${amount}`,
+          statusCode: 200,
+        };
+      }
+    } else {
+      return {
+        status: false,
+        message: "invalidpassword or Account number",
+        statusCode: 400,
+      };
+    }
+  });
+};
 
-const deposit = (acc, password, amount) => {
-  if (acc in accounts) {
-    if (accounts[acc].password == password) {
-      accounts[acc].balance += parseInt(amount);
-      accounts[acc].transactions.push({
-        type: "CREDIT",
-        Amount: parseInt(amount),
-      });
+// -----------------------withdrawal-------------------
 
+const withdrawal = (acc, password, amount, req) => {
+  return db.Account.findOne({
+    account_no: acc,
+    password: password,
+  }).then((res) => {
+    if (res) {
+      if (res.account_no != req.currentAcno) {
+        return {
+          status: false,
+          message: "account number is not authenticated",
+          statusCode: 422,
+        };
+      } else {
+        if (res.balance < amount) {
+          return {
+            status: false,
+            message: "insufficient balance",
+            statusCode: 422,
+          };
+        } else {
+          res.balance -= parseInt(amount);
+          let details = {
+            Type: "DEBIT",
+            "Amount": parseInt(amount),
+            "Balance": res.balance,
+          };
+          res.transactions.push(details);
+          res.save();
+          // console.log(res);
+          return {
+            status: true,
+            message: `Amount withdrawn from your account balance: ${amount}`,
+            statusCode: 200,
+          };
+        }
+      }
+    } else {
+      return {
+        status: false,
+        message: "invalid password or account number",
+        statusCode: 422,
+      };
+    }
+  }).catch(err=>console.log(err))
+};
+
+// ----------------transactions---------------------
+const getTransactions = (acc) => {
+  return db.Account.findOne({
+    account_no: acc,
+  }).then((res) => {
+    if (res) {
       return {
         status: true,
-        message: `Amount deposited to your account balance: ${accounts[acc].balance}`,
+        message: "success",
+        data: res.transactions,
         statusCode: 200,
       };
     } else {
       return {
         status: false,
-        message: "invalid password",
+        message: "invalid account number",
         statusCode: 400,
       };
     }
-  } else {
-    return {
-      status: false,
-      message: "invalid Account number",
-      statusCode: 400,
-    };
-  }
+  });
 };
 
-const withdrawal = (acc, password, amount) => {
-  if (acc in accounts) {
-    if (accounts[acc].password == password) {
-      if (parseInt(amount) <= accounts[acc].balance) {
-        accounts[acc].balance -= parseInt(amount);
-        let details = { type: "DEBIT", Amount: parseInt(amount) };
-        accounts[acc].transactions.push(details);
-
-        return {
-          status: true,
-          message: `withdrawal of amount ${amount} is successfull balance:${accounts[acc].balance}`,
-          statusCode: 200,
-        };
-      } else {
-        return {
-          status: false,
-          message: "You Dont Have Enough Funds In Your Account!",
-          statusCode: 400,
-        };
+const delAccount=(acno)=>{
+  return db.Account.deleteOne({
+    account_no:acno
+  }).then(res=>{
+    if(res){
+      return{
+        status:true,
+        message:"deletion sucess",
+        statusCode:200
       }
-    } else {
-      return {
-        status: false,
-        message: "password is invalid",
-        statusCode: 400,
-      };
     }
-  } else {
-    return {
-      status: false,
-      message: "Invalid account number",
-      statusCode: 400,
-    };
-  }
-};
-
-// ----------------transactions---------------------
-const getTransactions = (acc) => {
-  if (acc in accounts) {
-    return {
-      status: true,
-      message: "success",
-      data: accounts[acc].transactions,
-      statusCode: 200,
-    };
-  } else {
-    return {
-      status: false,
-      message: "invalid account number",
-      statusCode: 400,
-    };
-  }
-};
-
+    return{
+      status:false,
+      message:"detetion failed",
+      statusCode:400
+    }
+  })
+}
 module.exports = {
   register,
   login,
   deposit,
   withdrawal,
   getTransactions,
+  delAccount
 };
