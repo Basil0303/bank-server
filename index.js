@@ -67,7 +67,7 @@ app.post('/register',(req,res)=>{
 
 //login...............................................
 app.post('/login',(req,res)=>{
-    const result = dataservice.login(req.body.acno,req.body.psw)
+    const result = dataservice.login(req.body.acno,req.body.pswd)
      // res.status(result.statusCode).json(result)
      result.then(resobj=>{
         res.status(resobj.statusCode).send(resobj);
